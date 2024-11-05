@@ -29,13 +29,25 @@ log "Post-push hook triggered!"
 # 拉取最新的远程更改
 git fetch origin
 
+# 获取当前分支名
+CURRENT_BRANCH=$(git symbolic-ref --short HEAD)
 # 获取本地和远程分支的 SHA
 LOCAL_SHA=$(git rev-parse HEAD)
-REMOTE_SHA=$(git rev-parse "origin/$(git symbolic-ref --short HEAD)")
+REMOTE_SHA=$(git rev-parse "origin/$CURRENT_BRANCH" 2>/dev/null || echo "")
 
-if [ "$LOCAL_SHA" = "$REMOTE_SHA" ]; then
-    log "No new commits to push. Skipping subtree push."
-    exit 0
+# 检查是否需要向主库推送
+if [ -z "$REMOTE_SHA" ] || [ "$LOCAL_SHA" != "$REMOTE_SHA" ]; then
+    log "Detected changes in main repository. Attempting to push to main remote..."
+    
+    # 推送到主库
+    if git push origin "$CURRENT_BRANCH"; then
+        log "Successfully pushed changes to main repository."
+    else
+        log "Failed to push changes to main repository."
+        exit 1
+    fi
+else
+    log "No changes to push to main repository."
 fi
 
 # 遍历所有配置的子库
@@ -51,7 +63,7 @@ for SUBTREE_PATH in "${!SUBTREES[@]}"; do
     if [ ! -d "$SUBTREE_PATH" ]; then
         log "Warning: Subtree path '$SUBTREE_PATH' does not exist. Skipping."
         continue
-    }
+    fi
     
     # 检查是否有未提交的更改
     if ! git diff --quiet -- "$SUBTREE_PATH"; then
